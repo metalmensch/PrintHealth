@@ -1,16 +1,19 @@
-# Base config for Waveshare ESP32-C6-LCD-1.47
-CONFIG_IDF_TARGET="esp32c6"
+# Base config for LILYGO T-Display ESP32-C5 (dual-band Wi-Fi 6, ST7789 1.9")
+# Role: dedicated Wi-Fi NAT repeater for the HP Color LaserJet Pro M255dw.
+CONFIG_IDF_TARGET="esp32c5"
 
-# 8MB flash on this board
-CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
-CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+# 16MB flash on this board
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
 
 # Log over the built-in USB-Serial/JTAG
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
 
-# Give the main task room for LVGL + networking
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+# NAT (NAPT) so the printer on the SoftAP reaches the home LAN through the STA link
+CONFIG_LWIP_IP_FORWARD=y
+CONFIG_LWIP_IPV4_NAPT=y
 
-# FreeRTOS tick at 1kHz plays nicer with LVGL timing
+# Give the main task room for Wi-Fi + status work
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
 CONFIG_FREERTOS_HZ=1000

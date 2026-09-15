@@ -6,3 +6,4 @@ sdkconfig
 esp-idf/
 .espressif/
 dependencies.lock
+main/secrets.h
