@@ -259,15 +259,17 @@ static void update_task(void *arg)
                 lv_label_set_text(lbl_title, st.printer.make_and_model);
             }
 
-            /* State, colored by health: red if stopped, amber if a
-             * warning reason is present, green otherwise. */
+            /* State, colored by state: offline/stopped red, idle blue,
+             * printing green. (Toner health is shown by the bars below.) */
             const char *reasons = st.printer.state_reasons;
-            bool warn = reasons[0] && strcmp(reasons, "none") != 0;
             lv_label_set_text(lbl_state,
                 st.printer.ok ? ipp_state_str(st.printer.state) : "offline");
-            lv_obj_set_style_text_color(lbl_state,
-                !st.printer.ok || st.printer.state == 5 ? lv_color_hex(0xff5a5a)
-                : warn ? lv_color_hex(0xffb020) : lv_color_hex(0x39d353), 0);
+            uint32_t scol;
+            if (!st.printer.ok || st.printer.state == 5) scol = 0xff5a5a;  /* offline/stopped */
+            else if (st.printer.state == 4)              scol = 0x39d353;  /* printing */
+            else if (st.printer.state == 3)              scol = 0x4ea1ff;  /* idle */
+            else                                         scol = 0xffffff;
+            lv_obj_set_style_text_color(lbl_state, lv_color_hex(scol), 0);
 
             snprintf(buf, sizeof(buf), "%d", st.printer.queued_jobs);
             lv_label_set_text(lbl_jobs, st.printer.ok ? buf : "-");
@@ -281,6 +283,8 @@ static void update_task(void *arg)
                 snprintf(buf, sizeof(buf), "down");
             }
             lv_label_set_text(lbl_signal, buf);
+            lv_obj_set_style_text_color(lbl_signal,
+                st.wifi_up ? lv_color_hex(0xffffff) : lv_color_hex(0xff5a5a), 0);
 
             snprintf(buf, sizeof(buf), "%d", st.ap_clients);
             lv_label_set_text(lbl_clients, buf);
