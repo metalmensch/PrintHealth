@@ -15,6 +15,7 @@
  * Credentials live in secrets.h (git-ignored); see secrets.example.h.
  */
 #include <string.h>
+#include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
@@ -27,6 +28,9 @@
 #include "lwip/lwip_napt.h"
 
 #include "secrets.h"
+
+/* Set to 1 to build a station-only scan diagnostic (see app_main). */
+#define DIAG_STA_SCAN_ONLY 0
 
 /* SoftAP tunables. The channel is only a starting point: in AP+STA
  * coexistence the single radio forces the SoftAP onto the STA's channel
@@ -58,14 +62,17 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
         ESP_LOGW(TAG, "printer/client left AP: "MACSTR" (reason=%d)",
                  MAC2STR(e->mac), e->reason);
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        esp_wifi_connect();
-        ESP_LOGI(TAG, "station started, connecting to '%s'", HOME_WIFI_SSID);
+        /* Do not auto-connect here; app_main scans first, then connects. */
+        ESP_LOGI(TAG, "station started");
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        wifi_event_sta_disconnected_t *e = event_data;
         if (s_retry_num < STA_MAX_RETRY) {
             esp_wifi_connect();
             s_retry_num++;
-            ESP_LOGW(TAG, "home Wi-Fi disconnected, retry %d/%d", s_retry_num, STA_MAX_RETRY);
+            ESP_LOGW(TAG, "home Wi-Fi disconnected (reason=%d), retry %d/%d",
+                     e->reason, s_retry_num, STA_MAX_RETRY);
         } else {
+            ESP_LOGE(TAG, "giving up on home Wi-Fi (last reason=%d)", e->reason);
             xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
         }
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
@@ -96,6 +103,33 @@ static void wifi_init_softap(void)
     }
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap));
     ESP_LOGI(TAG, "SoftAP '%s' ready for the printer to join", PRINTER_AP_SSID);
+}
+
+/* One-shot diagnostic: list every AP the C5 can currently see, so we can
+ * tell whether the home SSID is visible and on which band/channel. */
+static void scan_and_log_aps(void)
+{
+    ESP_LOGI(TAG, "scanning for visible networks...");
+    esp_err_t sr = esp_wifi_scan_start(NULL, true);
+    if (sr != ESP_OK) {
+        ESP_LOGW(TAG, "scan_start failed: %s", esp_err_to_name(sr));
+        return;
+    }
+    uint16_t n = 0;
+    esp_wifi_scan_get_ap_num(&n);
+    if (n == 0) {
+        ESP_LOGW(TAG, "scan found 0 networks");
+        return;
+    }
+    wifi_ap_record_t *recs = calloc(n, sizeof(*recs));
+    if (!recs) return;
+    esp_wifi_scan_get_ap_records(&n, recs);
+    for (int i = 0; i < n; i++) {
+        int freq = recs[i].primary >= 36 ? 5 : 2;  /* rough band from channel */
+        ESP_LOGI(TAG, "  AP: rssi=%4d ch=%3d (%dGHz) auth=%d ssid='%s'",
+                 recs[i].rssi, recs[i].primary, freq, recs[i].authmode, recs[i].ssid);
+    }
+    free(recs);
 }
 
 static void wifi_init_sta(void)
@@ -151,12 +185,31 @@ void app_main(void)
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+
+#if DIAG_STA_SCAN_ONLY
+    /* Throwaway diagnostic: pure station mode, scan repeatedly, do nothing
+     * else. Isolates whether AP+STA coexistence is what breaks scanning. */
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    esp_netif_create_default_wifi_sta();
+    ESP_ERROR_CHECK(esp_wifi_start());
+    while (true) {
+        scan_and_log_aps();
+        vTaskDelay(pdMS_TO_TICKS(3000));
+    }
+#endif
+
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
 
     wifi_init_softap();
     wifi_init_sta();
 
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    scan_and_log_aps();
+
+    /* Now begin connecting to the home Wi-Fi. */
+    esp_wifi_connect();
+    ESP_LOGI(TAG, "connecting to home Wi-Fi '%s'", HOME_WIFI_SSID);
 
     EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
                                            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
