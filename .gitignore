@@ -2,3 +2,7 @@
 build/
 managed_components/
 sdkconfig.old
+sdkconfig
+esp-idf/
+.espressif/
+dependencies.lock

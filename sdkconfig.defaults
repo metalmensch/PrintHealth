@@ -1,0 +1,16 @@
+# Base config for Waveshare ESP32-C6-LCD-1.47
+CONFIG_IDF_TARGET="esp32c6"
+
+# 8MB flash on this board
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+
+# Log over the built-in USB-Serial/JTAG
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# Give the main task room for LVGL + networking
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+
+# FreeRTOS tick at 1kHz plays nicer with LVGL timing
+CONFIG_FREERTOS_HZ=1000
