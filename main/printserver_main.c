@@ -50,6 +50,9 @@
 /* How often to refresh the printer status over IPP. */
 #define STATUS_PERIOD_MS 15000
 
+/* DHCP hostname the bridge presents to the home router. */
+#define BRIDGE_HOSTNAME "PrintBridge"
+
 sys_status_t g_status;
 static SemaphoreHandle_t s_status_mtx;
 
@@ -164,6 +167,10 @@ static void scan_and_log_aps(void)
 static void wifi_init_sta(void)
 {
     s_netif_sta = esp_netif_create_default_wifi_sta();
+
+    /* Announce a friendly DHCP hostname so the bridge is easy to find in
+     * the router's client list (and to reserve its IP against). */
+    ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_set_hostname(s_netif_sta, BRIDGE_HOSTNAME));
 
     wifi_config_t sta = {
         .sta = {
