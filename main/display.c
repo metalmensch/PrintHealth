@@ -84,7 +84,7 @@ static void panel_init(void)
 
     esp_lcd_panel_dev_config_t pc = {
         .reset_gpio_num = PIN_RST,
-        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_RGB,
         .bits_per_pixel = 16,
     };
     ESP_ERROR_CHECK(esp_lcd_new_panel_st7789(s_io, &pc, &s_panel));
@@ -180,7 +180,7 @@ static uint32_t visible_color(uint32_t rgb)
 {
     int r = (rgb >> 16) & 0xff, g = (rgb >> 8) & 0xff, b = rgb & 0xff;
     int lum = (r * 30 + g * 59 + b * 11) / 100;
-    return lum < 40 ? 0xC8CED6 : rgb;   /* near-black -> light gray */
+    return lum < 40 ? 0x9AA4B0 : rgb;   /* near-black -> mid gray (visible) */
 }
 
 /* Build one toner bar row: colored letter, bar, percent label. */
@@ -207,10 +207,9 @@ static void build_bar(int k, char letter, uint32_t rgb)
     lv_obj_set_flex_grow(bar, 1);
     lv_obj_set_height(bar, 10);
     lv_bar_set_range(bar, 0, 100);
-    /* Empty track: near-background fill with a faint outline, so a 0% bar
-     * reads as clearly empty rather than a filled bar. */
-    lv_obj_set_style_bg_color(bar, lv_color_hex(0x101b28), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
+    /* Empty track: no fill, just a thin outline, so a 0% bar reads as an
+     * empty box rather than a filled (blue) bar. */
+    lv_obj_set_style_bg_opa(bar, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_border_width(bar, 1, LV_PART_MAIN);
     lv_obj_set_style_border_color(bar, lv_color_hex(0x33475c), LV_PART_MAIN);
     lv_obj_set_style_bg_color(bar, lv_color_hex(col), LV_PART_INDICATOR);
