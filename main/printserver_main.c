@@ -36,6 +36,7 @@
 #include "secrets.h"
 #include "status.h"
 #include "ipp_client.h"
+#include "display.h"
 
 /* Set to 1 to build a station-only scan diagnostic (see app_main). */
 #define DIAG_STA_SCAN_ONLY 0
@@ -242,6 +243,9 @@ void app_main(void)
 
     s_wifi_event_group = xEventGroupCreate();
     s_status_mtx = xSemaphoreCreateMutex();
+
+    /* Bring up the screen early so it shows progress while Wi-Fi connects. */
+    display_init();
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
                     &wifi_event_handler, NULL, NULL));
