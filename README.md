@@ -64,6 +64,9 @@ Taken from LilyGo's `board_config.h`; SPI2, 170×320, gap 35, color inversion, B
   - `9100` raw / JetDirect, `631` IPP, `515` LPD, `80` the printer's web UI.
 - **Announces** itself to the router as the DHCP hostname **`PrintBridge`**, so
   it's easy to find and reserve.
+- **Advertises over mDNS** (`PrintBridge.local`) with `_ipp._tcp`,
+  `_pdl-datastream._tcp` (raw 9100) and `_printer._tcp` (LPD), so clients can
+  auto-discover the printer at the bridge instead of adding it by IP.
 - **Shows live status** on the LCD: printer model, state (green/amber/red by
   health), pending jobs, Wi-Fi signal, connected clients, uptime, NTP clock, and
   the bridge IP. Printer info comes from an IPP `Get-Printer-Attributes` query.
@@ -78,7 +81,8 @@ main/
   status.h             shared status snapshot
   secrets.example.h    credential template (copy to secrets.h)
   idf_component.yml    managed deps: lvgl, esp_lvgl_port
-sdkconfig.defaults     esp32c5, 16 MB flash, NAPT + IP forwarding
+sdkconfig.defaults     esp32c5, 16 MB flash, NAPT + IP forwarding, STA-only mDNS
+partitions.csv         custom table with a 3 MB app slot
 CMakeLists.txt
 ```
 
@@ -134,9 +138,11 @@ unavailable: `-v socket://BRIDGE_IP:9100`.
 
 ## Limitations and notes
 
-- **Discovery doesn't cross the NAT.** AirPrint/Bonjour/mDNS auto-discovery won't
-  find the printer through the bridge — add it by the bridge's IP. (An mDNS
-  advertiser on the C5 is a possible future addition.)
+- **Discovery.** The printer's *own* AirPrint/Bonjour announcements don't cross
+  the NAT, so instead the bridge advertises itself over mDNS on the home LAN
+  (`_ipp._tcp`, raw, LPD). CUPS/Linux driverless discovery works from this; iOS
+  AirPrint may still need the printer added by the bridge IP, since the TXT
+  records here are generic rather than the printer's exact capability set.
 - **Delete stale printer queues.** After switching to the bridge, remove any old
   printer entry that points at the printer's former address, or jobs will hang in
   "Processing" forever while the printer sits idle.
@@ -144,9 +150,9 @@ unavailable: `-v socket://BRIDGE_IP:9100`.
   from moving.
 - **Single radio.** AP and station share one channel; throughput is shared but
   fine for printing.
-- **Flash headroom.** With LVGL the app fills most of the default 1.5 MB app
-  partition (~6% free). Adding much more needs a custom partition table — this
-  does *not* affect print jobs, which stream through and are never stored.
+- **Flash / partitions.** A custom `partitions.csv` gives the app a 3 MB slot
+  (~53% free with LVGL + mDNS), well within the 16 MB flash. Partition size does
+  *not* affect print jobs, which stream through and are never stored.
 
 ## License and credits
 

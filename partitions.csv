@@ -1,0 +1,7 @@
+# Custom partition table for the 16MB flash on the T-Display C5.
+# Single factory app (no OTA); the app slot is enlarged to 3MB so LVGL +
+# mDNS + future features fit comfortably. Plenty of flash remains unused.
+# Name,     Type, SubType, Offset,   Size
+nvs,        data, nvs,     0x9000,   0x6000,
+phy_init,   data, phy,     0xf000,   0x1000,
+factory,    app,  factory, 0x10000,  0x300000,

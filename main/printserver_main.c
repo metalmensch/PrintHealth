@@ -36,6 +36,8 @@
 #include "lwip/prot/ip.h"
 #include "lwip/def.h"
 
+#include "mdns.h"
+
 #include "secrets.h"
 #include "status.h"
 #include "ipp_client.h"
@@ -239,6 +241,54 @@ static void setup_port_forwards(void)
 #endif
 }
 
+/* Advertise the bridge over mDNS so clients auto-discover the printer at the
+ * bridge's IP instead of having to add it by hand. Publishes _ipp._tcp for
+ * driverless (IPP Everywhere) setup, plus raw-9100 and LPD services. The TXT
+ * records are enough for CUPS driverless discovery, which then queries the
+ * printer's real capabilities through the forwarded IPP port. */
+static void advertise_mdns(void)
+{
+    esp_err_t err = mdns_init();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "mdns_init failed: %s", esp_err_to_name(err));
+        return;
+    }
+    mdns_hostname_set(BRIDGE_HOSTNAME);                     /* PrintBridge.local */
+    mdns_instance_name_set("HP Color LaserJet (PrintBridge)");
+
+    char adminurl[48];
+    snprintf(adminurl, sizeof(adminurl), "http://%s/", g_status.bridge_ip);
+
+    mdns_txt_item_t ipp_txt[] = {
+        {"txtvers", "1"},
+        {"qtotal",  "1"},
+        {"rp",      "ipp/print"},
+        {"ty",      "HP Color LaserJet M255"},
+        {"product", "(HP Color LaserJet M255)"},
+        {"note",    "ESP32 PrintBridge"},
+        {"adminurl", adminurl},
+        {"pdl",     "application/pdf,image/urf,image/jpeg,application/postscript,application/octet-stream"},
+        {"URF",     "V1.4,CP1,PQ4,RS300-600,SRGB24,W8,DM1,IS1,MT1-3-4-5-8-11"},
+        {"Color",   "T"},
+        {"Duplex",  "T"},
+        {"Transparent", "T"},
+        {"priority", "30"},
+    };
+    ESP_ERROR_CHECK_WITHOUT_ABORT(
+        mdns_service_add(NULL, "_ipp", "_tcp", 631, ipp_txt,
+                         sizeof(ipp_txt) / sizeof(ipp_txt[0])));
+
+    mdns_txt_item_t raw_txt[] = { {"txtvers", "1"}, {"qtotal", "1"} };
+    ESP_ERROR_CHECK_WITHOUT_ABORT(
+        mdns_service_add(NULL, "_pdl-datastream", "_tcp", 9100, raw_txt, 2));
+
+    ESP_ERROR_CHECK_WITHOUT_ABORT(
+        mdns_service_add(NULL, "_printer", "_tcp", 515, NULL, 0));
+
+    ESP_LOGI(TAG, "mDNS: advertising %s.local (IPP 631 / raw 9100 / LPD 515)",
+             BRIDGE_HOSTNAME);
+}
+
 void app_main(void)
 {
     ESP_ERROR_CHECK(esp_netif_init());
@@ -315,6 +365,9 @@ void app_main(void)
         snprintf(g_status.bridge_ip, sizeof(g_status.bridge_ip), IPSTR, IP2STR(&ip.ip));
         status_unlock();
     }
+
+    /* Advertise over mDNS so clients discover the printer at the bridge IP. */
+    advertise_mdns();
 
     /* Start NTP time sync (best-effort; needs internet through the STA). */
     setenv("TZ", TIMEZONE, 1);
