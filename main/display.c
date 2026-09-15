@@ -207,9 +207,14 @@ static void build_bar(int k, char letter, uint32_t rgb)
     lv_obj_set_flex_grow(bar, 1);
     lv_obj_set_height(bar, 10);
     lv_bar_set_range(bar, 0, 100);
-    lv_obj_set_style_bg_color(bar, lv_color_hex(0x24384d), LV_PART_MAIN);
+    /* Empty track: near-background fill with a faint outline, so a 0% bar
+     * reads as clearly empty rather than a filled bar. */
+    lv_obj_set_style_bg_color(bar, lv_color_hex(0x101b28), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(bar, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(bar, lv_color_hex(0x33475c), LV_PART_MAIN);
     lv_obj_set_style_bg_color(bar, lv_color_hex(col), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_INDICATOR);
     lv_obj_set_style_radius(bar, 2, LV_PART_MAIN);
     lv_obj_set_style_radius(bar, 2, LV_PART_INDICATOR);
 
@@ -266,8 +271,8 @@ static void update_task(void *arg)
                 st.printer.ok ? ipp_state_str(st.printer.state) : "offline");
             uint32_t scol;
             if (!st.printer.ok || st.printer.state == 5) scol = 0xff5a5a;  /* offline/stopped */
-            else if (st.printer.state == 4)              scol = 0x39d353;  /* printing */
-            else if (st.printer.state == 3)              scol = 0x4ea1ff;  /* idle */
+            else if (st.printer.state == 3)              scol = 0x39d353;  /* idle */
+            else if (st.printer.state == 4)              scol = 0x4ea1ff;  /* printing */
             else                                         scol = 0xffffff;
             lv_obj_set_style_text_color(lbl_state, lv_color_hex(scol), 0);
 
@@ -319,11 +324,8 @@ static void update_task(void *arg)
                 if (lvl < 0) snprintf(pb, sizeof(pb), "?");
                 else snprintf(pb, sizeof(pb), "%d%%", lvl);
                 lv_label_set_text(bar_pct[k], pb);
-                /* Empty (0%) reads as a solid red bar; low (<=10%) reddens the
-                 * number; otherwise the normal dark track / white number. */
-                lv_obj_set_style_bg_color(bar_obj[k],
-                    lvl == 0 ? lv_color_hex(0xff5a5a) : lv_color_hex(0x24384d),
-                    LV_PART_MAIN);
+                /* Empty/low (<=10%, includes 0%) reddens the number; the bar
+                 * itself just fills to the level (0% = empty). */
                 lv_obj_set_style_text_color(bar_pct[k],
                     (lvl >= 0 && lvl <= 10) ? lv_color_hex(0xff5a5a)
                                             : lv_color_hex(0xffffff), 0);
