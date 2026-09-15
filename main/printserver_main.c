@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Jason Dempsey
+ *
  * PrintServer -- ESP32-C5 dedicated Wi-Fi NAT repeater for the
  * HP Color LaserJet Pro M255dw.
  *

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Jason Dempsey
 #pragma once
 
 /* Initialize the ST7789 LCD (LilyGo T-Display C5), bring up LVGL, build the

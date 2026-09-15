@@ -148,12 +148,15 @@ unavailable: `-v socket://BRIDGE_IP:9100`.
   partition (~6% free). Adding much more needs a custom partition table — this
   does *not* affect print jobs, which stream through and are never stored.
 
-## Credits and license
+## License and credits
 
-The Wi-Fi/NAT core is adapted from the public-domain ESP-IDF `wifi/softap_sta`
-example. LCD parameters come from LilyGo's
-[T-Display-C5](https://github.com/Xinyuan-LilyGO/T-Display-C5) board support.
-Uses [LVGL](https://lvgl.io) and Espressif's `esp_lvgl_port`.
+Licensed under the **GNU General Public License v3.0 or later**
+(`GPL-3.0-or-later`) — see [LICENSE](LICENSE). GPL **v3** is required because the
+firmware combines with Apache-2.0 code (ESP-IDF, esp_lvgl_port), which is
+GPLv3-compatible but not GPLv2-compatible.
 
-No license file is included yet — add one before publishing if you want to set
-usage terms.
+The Wi-Fi/NAT core is adapted from the public-domain (CC0) ESP-IDF
+`wifi/softap_sta` example; LCD parameters come from LilyGo's
+[T-Display-C5](https://github.com/Xinyuan-LilyGO/T-Display-C5) board support; the
+UI uses [LVGL](https://lvgl.io) via Espressif's `esp_lvgl_port`. Full attribution
+and third-party licenses are in [CREDITS.md](CREDITS.md).

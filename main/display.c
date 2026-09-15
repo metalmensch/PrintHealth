@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Jason Dempsey
+ *
  * Status display for the LilyGo T-Display C5 (1.9" ST7789, 170x320).
  *
  * Panel wiring and init parameters (SPI2, MOSI 9 / SCK 7 / CS 26 / DC 8 /

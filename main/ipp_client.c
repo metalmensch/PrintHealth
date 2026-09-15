@@ -1,4 +1,7 @@
 /*
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ * Copyright (C) 2026 Jason Dempsey
+ *
  * Minimal IPP (Internet Printing Protocol) client: a single
  * Get-Printer-Attributes request, just enough to read the model name,
  * printer state, state reasons, and queued job count for the status
