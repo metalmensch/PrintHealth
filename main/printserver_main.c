@@ -26,6 +26,8 @@
 #include "esp_netif.h"
 #include "nvs_flash.h"
 #include "lwip/lwip_napt.h"
+#include "lwip/prot/ip.h"
+#include "lwip/def.h"
 
 #include "secrets.h"
 
@@ -39,6 +41,11 @@
 #define AP_START_CHANNEL   1
 #define AP_MAX_CONN        4
 #define STA_MAX_RETRY      10
+
+/* The printer is the only DHCP client on the SoftAP, so the ESP-IDF DHCP
+ * server (pool base 192.168.4.2) assigns it this address. Leases are
+ * sticky per-MAC, so it stays put across reconnects. */
+#define PRINTER_LAN_IP     "192.168.4.2"
 
 #define WIFI_CONNECTED_BIT BIT0
 #define WIFI_FAIL_BIT      BIT1
@@ -164,6 +171,42 @@ static void softap_set_dns_addr(void)
     ESP_ERROR_CHECK_WITHOUT_ABORT(esp_netif_dhcps_start(s_netif_ap));
 }
 
+/* Forward the printer's service ports from the ESP32's home-LAN IP to the
+ * printer sitting behind NAT, so home devices can print by connecting to
+ * the ESP32's IP. Discovery (mDNS/AirPrint) does not cross NAT, so add the
+ * printer on your computers by this ESP32's IP address. */
+static void setup_port_forwards(void)
+{
+#if IP_NAPT
+    esp_netif_ip_info_t sta_ip;
+    if (esp_netif_get_ip_info(s_netif_sta, &sta_ip) != ESP_OK) {
+        ESP_LOGE(TAG, "no STA IP; cannot set up port forwarding");
+        return;
+    }
+    esp_ip4_addr_t printer;
+    printer.addr = esp_ip4addr_aton(PRINTER_LAN_IP);
+
+    /* ip_portmap_add() takes host-order ports (it byte-swaps internally)
+     * and returns 1 on success, 0 on failure. */
+    const uint16_t ports[] = { 9100, 631, 515, 80 };
+    const char *names[]    = { "raw/JetDirect", "IPP", "LPD", "web UI" };
+    for (int i = 0; i < sizeof(ports) / sizeof(ports[0]); i++) {
+        u8_t ok = ip_portmap_add(IP_PROTO_TCP,
+                                 sta_ip.ip.addr, ports[i],
+                                 printer.addr,   ports[i]);
+        if (ok) {
+            ESP_LOGI(TAG, "forward tcp/%u (%s) -> " IPSTR ":%u",
+                     ports[i], names[i], IP2STR(&printer), ports[i]);
+        } else {
+            ESP_LOGE(TAG, "failed to forward tcp/%u (%s)", ports[i], names[i]);
+        }
+    }
+    ESP_LOGI(TAG, "print to this bridge at " IPSTR, IP2STR(&sta_ip.ip));
+#else
+    ESP_LOGE(TAG, "NAPT/portmap not compiled in");
+#endif
+}
+
 void app_main(void)
 {
     ESP_ERROR_CHECK(esp_netif_init());
@@ -223,6 +266,7 @@ void app_main(void)
         } else {
             ESP_LOGI(TAG, "NAPT on: printer traffic now bridges to the home LAN");
         }
+        setup_port_forwards();
     } else {
         ESP_LOGE(TAG, "could not join home Wi-Fi '%s' -- check secrets.h", HOME_WIFI_SSID);
         return;
