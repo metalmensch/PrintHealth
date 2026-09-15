@@ -16,23 +16,44 @@
  */
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h"
 #include "esp_mac.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_netif_sntp.h"
+#include "esp_timer.h"
 #include "nvs_flash.h"
 #include "lwip/lwip_napt.h"
 #include "lwip/prot/ip.h"
 #include "lwip/def.h"
 
 #include "secrets.h"
+#include "status.h"
+#include "ipp_client.h"
 
 /* Set to 1 to build a station-only scan diagnostic (see app_main). */
 #define DIAG_STA_SCAN_ONLY 0
+
+/* POSIX TZ string for the wall clock. Default US Pacific; change to suit
+ * (e.g. "EST5EDT,M3.2.0,M11.1.0", "CST6CDT,M3.2.0,M11.1.0"). */
+#ifndef TIMEZONE
+#define TIMEZONE "PST8PDT,M3.2.0,M11.1.0"
+#endif
+
+/* How often to refresh the printer status over IPP. */
+#define STATUS_PERIOD_MS 15000
+
+sys_status_t g_status;
+static SemaphoreHandle_t s_status_mtx;
+
+void status_lock(void)   { xSemaphoreTake(s_status_mtx, portMAX_DELAY); }
+void status_unlock(void) { xSemaphoreGive(s_status_mtx); }
 
 /* SoftAP tunables. The channel is only a starting point: in AP+STA
  * coexistence the single radio forces the SoftAP onto the STA's channel
@@ -220,6 +241,7 @@ void app_main(void)
     ESP_ERROR_CHECK(ret);
 
     s_wifi_event_group = xEventGroupCreate();
+    s_status_mtx = xSemaphoreCreateMutex();
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
                     &wifi_event_handler, NULL, NULL));
@@ -272,13 +294,62 @@ void app_main(void)
         return;
     }
 
-    /* Heartbeat so the serial log shows the bridge is alive and how many
-     * clients (the printer) are associated. */
+    /* Record the bridge IP for the display. */
+    esp_netif_ip_info_t ip;
+    if (esp_netif_get_ip_info(s_netif_sta, &ip) == ESP_OK) {
+        status_lock();
+        snprintf(g_status.bridge_ip, sizeof(g_status.bridge_ip), IPSTR, IP2STR(&ip.ip));
+        status_unlock();
+    }
+
+    /* Start NTP time sync (best-effort; needs internet through the STA). */
+    setenv("TZ", TIMEZONE, 1);
+    tzset();
+    esp_sntp_config_t sntp = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    esp_netif_sntp_init(&sntp);
+
+    /* Status loop: refresh Wi-Fi/uptime/time every tick, and the printer
+     * info over IPP every STATUS_PERIOD_MS. Logs a heartbeat and feeds the
+     * display via g_status. */
+    int since_ipp = STATUS_PERIOD_MS;   /* query immediately on first pass */
     while (true) {
+        wifi_ap_record_t ap;
+        int rssi = 0;
+        bool up = (esp_wifi_sta_get_ap_info(&ap) == ESP_OK);
+        if (up) rssi = ap.rssi;
+
         wifi_sta_list_t clients;
-        if (esp_wifi_ap_get_sta_list(&clients) == ESP_OK) {
-            ESP_LOGI(TAG, "[hb] bridge up, %d client(s) on AP", clients.num);
+        int nclients = (esp_wifi_ap_get_sta_list(&clients) == ESP_OK) ? clients.num : 0;
+
+        time_t now = 0;
+        time(&now);
+        if (now < 1600000000) now = 0;   /* not yet NTP-synced */
+
+        status_lock();
+        g_status.wifi_up   = up;
+        g_status.rssi      = rssi;
+        g_status.uptime_s  = (unsigned)(esp_timer_get_time() / 1000000);
+        g_status.now       = now;
+        g_status.ap_clients = nclients;
+        status_unlock();
+
+        if (since_ipp >= STATUS_PERIOD_MS && nclients > 0) {
+            printer_info_t pi;
+            if (ipp_get_printer_info(PRINTER_LAN_IP, &pi)) {
+                status_lock(); g_status.printer = pi; status_unlock();
+                ESP_LOGI(TAG, "[status] '%s' state=%s reasons=%s jobs=%d | rssi=%ddBm up=%us clients=%d",
+                         pi.make_and_model, ipp_state_str(pi.state),
+                         pi.state_reasons[0] ? pi.state_reasons : "none",
+                         pi.queued_jobs, rssi, g_status.uptime_s, nclients);
+            } else {
+                ESP_LOGW(TAG, "[status] IPP query failed; rssi=%ddBm clients=%d", rssi, nclients);
+            }
+            since_ipp = 0;
+        } else {
+            ESP_LOGI(TAG, "[hb] bridge up, %d client(s), rssi=%ddBm", nclients, rssi);
         }
-        vTaskDelay(pdMS_TO_TICKS(30000));
+
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        since_ipp += 3000;
     }
 }
