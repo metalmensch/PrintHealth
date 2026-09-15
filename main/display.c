@@ -44,6 +44,11 @@ static const char *TAG = "display";
 static lv_obj_t *lbl_title, *lbl_state, *lbl_jobs, *lbl_signal,
                 *lbl_clients, *lbl_uptime, *lbl_time, *lbl_ip, *lbl_msg;
 
+static lv_obj_t *toner_box;                     /* holds the toner bars */
+static lv_obj_t *bar_obj[IPP_MAX_MARKERS];
+static lv_obj_t *bar_pct[IPP_MAX_MARKERS];
+static int       bars_built;                    /* number of bars created */
+
 static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_panel_io_handle_t s_io;
 
@@ -144,15 +149,77 @@ static void build_ui(lv_display_t *disp)
     lbl_time    = make_row(scr, "Time");
     lbl_ip      = make_row(scr, "Bridge");
 
-    /* Printer status / toner message, pinned to the bottom, wraps as needed. */
+    lv_obj_t *sep2 = lv_obj_create(scr);
+    lv_obj_remove_style_all(sep2);
+    lv_obj_set_size(sep2, LV_PCT(100), 2);
+    lv_obj_set_style_bg_color(sep2, lv_color_hex(0x24384d), 0);
+    lv_obj_set_style_bg_opa(sep2, LV_OPA_COVER, 0);
+
+    lv_obj_t *cap = lv_label_create(scr);
+    lv_label_set_text(cap, "Toner");
+    lv_obj_set_style_text_color(cap, lv_color_hex(0x8899aa), 0);
+
+    /* Container for the per-color toner bars (populated once data arrives). */
+    toner_box = lv_obj_create(scr);
+    lv_obj_remove_style_all(toner_box);
+    lv_obj_set_width(toner_box, LV_PCT(100));
+    lv_obj_set_height(toner_box, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(toner_box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(toner_box, 4, 0);
+
+    /* Non-toner alerts (jams, cover open, out of paper) show here. */
     lbl_msg = lv_label_create(scr);
     lv_label_set_long_mode(lbl_msg, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(lbl_msg, LV_PCT(100));
-    lv_obj_set_style_pad_top(lbl_msg, 4, 0);
-    lv_obj_set_style_margin_top(lbl_msg, LV_SIZE_CONTENT, 0);
-    lv_obj_set_flex_grow(lbl_msg, 1);   /* push toward the bottom */
-    lv_obj_set_style_text_color(lbl_msg, lv_color_hex(0x39d353), 0);
+    lv_obj_set_style_pad_top(lbl_msg, 2, 0);
     lv_label_set_text(lbl_msg, "");
+}
+
+/* Make dark toner colors (black) visible against the dark background. */
+static uint32_t visible_color(uint32_t rgb)
+{
+    int r = (rgb >> 16) & 0xff, g = (rgb >> 8) & 0xff, b = rgb & 0xff;
+    int lum = (r * 30 + g * 59 + b * 11) / 100;
+    return lum < 40 ? 0xC8CED6 : rgb;   /* near-black -> light gray */
+}
+
+/* Build one toner bar row: colored letter, bar, percent label. */
+static void build_bar(int k, char letter, uint32_t rgb)
+{
+    uint32_t col = visible_color(rgb);
+
+    lv_obj_t *row = lv_obj_create(toner_box);
+    lv_obj_remove_style_all(row);
+    lv_obj_set_width(row, LV_PCT(100));
+    lv_obj_set_height(row, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                          LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(row, 5, 0);
+
+    char ls[2] = { letter, '\0' };
+    lv_obj_t *lab = lv_label_create(row);
+    lv_label_set_text(lab, ls);
+    lv_obj_set_width(lab, 12);
+    lv_obj_set_style_text_color(lab, lv_color_hex(col), 0);
+
+    lv_obj_t *bar = lv_bar_create(row);
+    lv_obj_set_flex_grow(bar, 1);
+    lv_obj_set_height(bar, 10);
+    lv_bar_set_range(bar, 0, 100);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(0x24384d), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(bar, lv_color_hex(col), LV_PART_INDICATOR);
+    lv_obj_set_style_radius(bar, 2, LV_PART_MAIN);
+    lv_obj_set_style_radius(bar, 2, LV_PART_INDICATOR);
+
+    lv_obj_t *pct = lv_label_create(row);
+    lv_obj_set_width(pct, 36);
+    lv_obj_set_style_text_align(pct, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_text(pct, "-");
+
+    bar_obj[k] = bar;
+    bar_pct[k] = pct;
 }
 
 /* Turn an IPP reason list like "cyan-toner-low,toner-low-warning" into
@@ -231,21 +298,64 @@ static void update_task(void *arg)
 
             lv_label_set_text(lbl_ip, st.bridge_ip[0] ? st.bridge_ip : "-");
 
-            /* Bottom line: printer status / toner message. */
+            /* Toner graph: build the bars once we know the markers, then keep
+             * their values updated. */
+            if (st.printer.ok && st.printer.marker_count > 0 && bars_built == 0) {
+                int n = st.printer.marker_count;
+                if (n > IPP_MAX_MARKERS) n = IPP_MAX_MARKERS;
+                for (int k = 0; k < n; k++)
+                    build_bar(k, st.printer.marker_letter[k], st.printer.marker_rgb[k]);
+                bars_built = n;
+            }
+            for (int k = 0; k < bars_built; k++) {
+                int lvl = st.printer.marker_level[k];
+                if (lvl > 100) lvl = 100;
+                lv_bar_set_value(bar_obj[k], lvl < 0 ? 0 : lvl, LV_ANIM_OFF);
+                char pb[16];
+                if (lvl < 0) snprintf(pb, sizeof(pb), "?");
+                else snprintf(pb, sizeof(pb), "%d%%", lvl);
+                lv_label_set_text(bar_pct[k], pb);
+                /* Empty (0%) reads as a solid red bar; low (<=10%) reddens the
+                 * number; otherwise the normal dark track / white number. */
+                lv_obj_set_style_bg_color(bar_obj[k],
+                    lvl == 0 ? lv_color_hex(0xff5a5a) : lv_color_hex(0x24384d),
+                    LV_PART_MAIN);
+                lv_obj_set_style_text_color(bar_pct[k],
+                    (lvl >= 0 && lvl <= 10) ? lv_color_hex(0xff5a5a)
+                                            : lv_color_hex(0xffffff), 0);
+            }
+
+            /* Message line: non-toner alerts only (toner is shown by the bars). */
+            char other[80]; other[0] = '\0';
+            if (st.printer.ok && reasons[0] && strcmp(reasons, "none")) {
+                const char *p = reasons;
+                while (*p) {
+                    const char *e = strchr(p, ',');
+                    int tl = e ? (int)(e - p) : (int)strlen(p);
+                    char tok[48];
+                    int c = tl < (int)sizeof(tok) - 1 ? tl : (int)sizeof(tok) - 1;
+                    memcpy(tok, p, c); tok[c] = '\0';
+                    if (!strstr(tok, "toner")) {
+                        char pretty[48];
+                        prettify_reasons(tok, pretty, sizeof(pretty));
+                        if (other[0]) strncat(other, ", ", sizeof(other) - strlen(other) - 1);
+                        strncat(other, pretty, sizeof(other) - strlen(other) - 1);
+                    }
+                    if (!e) break;
+                    p = e + 1;
+                }
+            }
             if (!st.printer.ok) {
                 lv_label_set_text(lbl_msg, "printer offline");
                 lv_obj_set_style_text_color(lbl_msg, lv_color_hex(0x8899aa), 0);
-            } else if (reasons[0] == '\0' || !strcmp(reasons, "none")) {
-                lv_label_set_text(lbl_msg, "Ready");
-                lv_obj_set_style_text_color(lbl_msg, lv_color_hex(0x39d353), 0);
-            } else {
-                char pretty[80];
-                prettify_reasons(reasons, pretty, sizeof(pretty));
-                lv_label_set_text(lbl_msg, pretty);
-                bool bad = strstr(reasons, "error") || strstr(reasons, "jam")
-                        || strstr(reasons, "empty") || strstr(reasons, "stopped");
+            } else if (other[0]) {
+                lv_label_set_text(lbl_msg, other);
+                bool bad = strstr(other, "jam") || strstr(other, "empty")
+                        || strstr(other, "error") || strstr(other, "open");
                 lv_obj_set_style_text_color(lbl_msg,
                     bad ? lv_color_hex(0xff5a5a) : lv_color_hex(0xffb020), 0);
+            } else {
+                lv_label_set_text(lbl_msg, "");
             }
 
             lvgl_port_unlock();
