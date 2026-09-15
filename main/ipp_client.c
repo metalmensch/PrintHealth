@@ -87,10 +87,15 @@ static void parse_response(const uint8_t *b, int len, printer_info_t *out)
         } else if (!strcmp(cur, "queued-job-count") && tag == IPP_TAG_INTEGER) {
             out->queued_jobs = 0; for (int k = 0; k < vl; k++) out->queued_jobs = (out->queued_jobs << 8) | val[k];
         } else if (!strcmp(cur, "printer-state-reasons")) {
-            /* keep only the first reason listed */
-            if (out->state_reasons[0] == '\0') {
-                int c = vl < (int)sizeof(out->state_reasons) - 1 ? vl : (int)sizeof(out->state_reasons) - 1;
-                memcpy(out->state_reasons, val, c); out->state_reasons[c] = '\0';
+            /* printer-state-reasons is 1setOf: append each value, comma-joined,
+             * so per-color toner reasons all show up. */
+            size_t used = strlen(out->state_reasons);
+            if (used < sizeof(out->state_reasons) - 2) {
+                if (used > 0) { out->state_reasons[used++] = ','; out->state_reasons[used] = '\0'; }
+                int room = (int)sizeof(out->state_reasons) - 1 - (int)used;
+                int c = vl < room ? vl : room;
+                memcpy(out->state_reasons + used, val, c);
+                out->state_reasons[used + c] = '\0';
             }
         }
     }

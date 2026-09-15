@@ -42,7 +42,7 @@ static const char *TAG = "display";
 #define LCD_PCLK_HZ   (20 * 1000 * 1000)
 
 static lv_obj_t *lbl_title, *lbl_state, *lbl_jobs, *lbl_signal,
-                *lbl_clients, *lbl_uptime, *lbl_time, *lbl_ip;
+                *lbl_clients, *lbl_uptime, *lbl_time, *lbl_ip, *lbl_msg;
 
 static esp_lcd_panel_handle_t s_panel;
 static esp_lcd_panel_io_handle_t s_io;
@@ -143,6 +143,30 @@ static void build_ui(lv_display_t *disp)
     lbl_uptime  = make_row(scr, "Uptime");
     lbl_time    = make_row(scr, "Time");
     lbl_ip      = make_row(scr, "Bridge");
+
+    /* Printer status / toner message, pinned to the bottom, wraps as needed. */
+    lbl_msg = lv_label_create(scr);
+    lv_label_set_long_mode(lbl_msg, LV_LABEL_LONG_WRAP);
+    lv_obj_set_width(lbl_msg, LV_PCT(100));
+    lv_obj_set_style_pad_top(lbl_msg, 4, 0);
+    lv_obj_set_style_margin_top(lbl_msg, LV_SIZE_CONTENT, 0);
+    lv_obj_set_flex_grow(lbl_msg, 1);   /* push toward the bottom */
+    lv_obj_set_style_text_color(lbl_msg, lv_color_hex(0x39d353), 0);
+    lv_label_set_text(lbl_msg, "");
+}
+
+/* Turn an IPP reason list like "cyan-toner-low,toner-low-warning" into
+ * "cyan toner low, toner low warning" for display. */
+static void prettify_reasons(const char *in, char *out, size_t n)
+{
+    size_t j = 0;
+    for (size_t i = 0; in[i] && j < n - 1; i++) {
+        char c = in[i];
+        if (c == '-') c = ' ';
+        else if (c == ',') { if (j < n - 2) out[j++] = ','; c = ' '; }
+        out[j++] = c;
+    }
+    out[j] = '\0';
 }
 
 static void fmt_uptime(unsigned s, char *out, size_t n)
@@ -206,6 +230,23 @@ static void update_task(void *arg)
             lv_label_set_text(lbl_time, buf);
 
             lv_label_set_text(lbl_ip, st.bridge_ip[0] ? st.bridge_ip : "-");
+
+            /* Bottom line: printer status / toner message. */
+            if (!st.printer.ok) {
+                lv_label_set_text(lbl_msg, "printer offline");
+                lv_obj_set_style_text_color(lbl_msg, lv_color_hex(0x8899aa), 0);
+            } else if (reasons[0] == '\0' || !strcmp(reasons, "none")) {
+                lv_label_set_text(lbl_msg, "Ready");
+                lv_obj_set_style_text_color(lbl_msg, lv_color_hex(0x39d353), 0);
+            } else {
+                char pretty[80];
+                prettify_reasons(reasons, pretty, sizeof(pretty));
+                lv_label_set_text(lbl_msg, pretty);
+                bool bad = strstr(reasons, "error") || strstr(reasons, "jam")
+                        || strstr(reasons, "empty") || strstr(reasons, "stopped");
+                lv_obj_set_style_text_color(lbl_msg,
+                    bad ? lv_color_hex(0xff5a5a) : lv_color_hex(0xffb020), 0);
+            }
 
             lvgl_port_unlock();
         }
