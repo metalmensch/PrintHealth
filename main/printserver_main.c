@@ -400,6 +400,7 @@ void app_main(void)
      * display via g_status. */
     int since_ipp = STATUS_PERIOD_MS;   /* query immediately on first pass */
     bool mdns_labeled = false;
+    char adv_path[24] = "";             /* IPP path currently advertised via mDNS rp */
     while (true) {
         wifi_ap_record_t ap;
         int rssi = 0;
@@ -427,7 +428,14 @@ void app_main(void)
                 status_lock(); g_status.printer = pi; status_unlock();
                 if (!mdns_labeled) {
                     mdns_apply_model(pi.make_and_model, ipp_endpoint_path());
+                    strncpy(adv_path, ipp_endpoint_path(), sizeof(adv_path) - 1);
                     mdns_labeled = true;
+                } else if (strcmp(adv_path, ipp_endpoint_path()) != 0) {
+                    /* Endpoint converged to a different path; update rp. */
+                    const char *p = ipp_endpoint_path();
+                    if (p[0] == '/') mdns_service_txt_item_set("_ipp", "_tcp", "rp", p + 1);
+                    strncpy(adv_path, p, sizeof(adv_path) - 1);
+                    ESP_LOGI(TAG, "mDNS: rp updated to %s", p);
                 }
                 ESP_LOGI(TAG, "[status] '%s' state=%s reasons=%s jobs=%d | rssi=%ddBm up=%us clients=%d",
                          pi.make_and_model, ipp_state_str(pi.state),

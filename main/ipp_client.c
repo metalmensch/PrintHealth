@@ -225,22 +225,23 @@ done:
 
 bool ipp_get_printer_info(const char *host, printer_info_t *out)
 {
-    memset(out, 0, sizeof(*out));
-    out->state = 3;
-
-    /* Try the last known-good path first, then the rest. */
-    if (query_once(host, s_last_path, out)) return true;
+    /* Always try paths in preferred order (AirPrint's /ipp/print first) so a
+     * transient boot-time failure of the preferred path doesn't leave us
+     * stuck on a fallback -- the next cycle reconverges to the standard one. */
     for (size_t i = 0; i < sizeof(k_paths) / sizeof(k_paths[0]); i++) {
-        if (!strcmp(k_paths[i], s_last_path)) continue;   /* already tried */
         memset(out, 0, sizeof(*out));
         out->state = 3;
         if (query_once(host, k_paths[i], out)) {
-            strncpy(s_last_path, k_paths[i], sizeof(s_last_path) - 1);
-            s_last_path[sizeof(s_last_path) - 1] = '\0';
-            ESP_LOGI(TAG, "IPP endpoint: %s", s_last_path);
+            if (strcmp(s_last_path, k_paths[i])) {
+                strncpy(s_last_path, k_paths[i], sizeof(s_last_path) - 1);
+                s_last_path[sizeof(s_last_path) - 1] = '\0';
+                ESP_LOGI(TAG, "IPP endpoint: %s", s_last_path);
+            }
             return true;
         }
     }
+    memset(out, 0, sizeof(*out));
+    out->state = 3;
     return false;
 }
 
