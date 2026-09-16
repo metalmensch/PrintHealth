@@ -2,7 +2,8 @@
 
 Firmware that turns a **LilyGo T-Display C5** (ESP32-C5) into a small, low-power
 **Wi-Fi NAT repeater** dedicated to an **HP Color LaserJet Pro M255dw**, plus a
-live status screen on the board's 1.9″ LCD.
+live status screen on the board's 1.9″ LCD. The power consumption is about 1W, and
+you can get a LilyGo T-Display for about $15 online at time of writing.
 
 The M255dw's built-in Wi-Fi is unreliable at range. This board sits next to the
 printer, gives it a strong short-range access point, and routes its traffic onto
