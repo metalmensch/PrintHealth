@@ -154,8 +154,10 @@ unavailable: `-v socket://BRIDGE_IP:9100`.
   (~53% free with LVGL + mDNS), well within the 16 MB flash. Partition size does
   *not* affect print jobs, which stream through and are never stored.
 
-##How it should look at the end.
+## How it should look at the end.
+
 You might need a USB-A (male) to USB-C (male) adapter.
+
 <img width="532" height="705" alt="image" src="https://github.com/user-attachments/assets/39a4aaab-351b-4263-8505-04a6a2441ab1" />
 
 
