@@ -32,7 +32,9 @@ ESP-IDF `wifi/softap_sta` NAT pattern.
 **This helps when** the flakiness is caused by range, weak signal, or 2.4 GHz
 congestion — the usual causes. It won't fix a bug inside the printer's own
 network stack. In practice, moving the printer onto a strong short-range AP right
-beside it is a solid, cheap win.
+beside it is a solid, cheap win. I included a bit of diagnostics so that you don't
+have to stand in front of the printer and poke at it. The usual cause of issues, 
+toner low, is solved simply by providing a readout as part of the health display.
 
 ## Hardware
 
@@ -157,7 +159,7 @@ unavailable: `-v socket://BRIDGE_IP:9100`.
 
 ## How it should look at the end.
 
-You might need a USB-A (male) to USB-C (male) adapter.
+You might need a USB-A (male) to USB-C (male) adapter. Oh look, I'm out of color toner: that's why my Windows computers can't print in black and white.
 
 <img width="532" height="705" alt="image" src="https://github.com/user-attachments/assets/39a4aaab-351b-4263-8505-04a6a2441ab1" />
 
