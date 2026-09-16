@@ -1,7 +1,8 @@
 # PrintServer — ESP32-C5 Wi-Fi bridge for an HP Color LaserJet Pro M255dw
 
 Firmware that turns a **LilyGo T-Display C5** (ESP32-C5) into a small, low-power
-**Wi-Fi NAT repeater** dedicated to an **HP Color LaserJet Pro M255dw**, plus a
+**Wi-Fi NAT repeater** dedicated to an **HP Color LaserJet Pro M255dw** (it might 
+work on other printers, but I only have the one), plus a
 live status screen on the board's 1.9″ LCD. The power consumption is about 1W, and
 you can get a LilyGo T-Display for about $15 online at time of writing.
 
