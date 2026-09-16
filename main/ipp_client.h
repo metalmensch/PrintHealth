@@ -28,3 +28,7 @@ bool ipp_get_printer_info(const char *host, printer_info_t *out);
 
 /* Human-readable printer-state. */
 const char *ipp_state_str(int state);
+
+/* The IPP resource path (e.g. "/ipp/print") that last worked, for reuse in
+ * mDNS advertisements. */
+const char *ipp_endpoint_path(void);

@@ -170,14 +170,19 @@ static void parse_response(const uint8_t *b, int len, printer_info_t *out)
     }
 }
 
-bool ipp_get_printer_info(const char *host, printer_info_t *out)
-{
-    memset(out, 0, sizeof(*out));
-    out->state = 3;
+/* IPP resource paths to try, most common first. Different printers expose
+ * Get-Printer-Attributes at different paths; AirPrint's is /ipp/print. */
+static const char *k_paths[] = { "/ipp/print", "/ipp/printer", "/ipp", "/" };
+static char s_last_path[24] = "/ipp/print";   /* last path that worked */
 
-    char url[64], uri[64];
-    snprintf(url, sizeof(url), "http://%s:631/ipp/print", host);
-    snprintf(uri, sizeof(uri), "ipp://%s/ipp/print", host);
+const char *ipp_endpoint_path(void) { return s_last_path; }
+
+/* One IPP Get-Printer-Attributes attempt at a specific resource path. */
+static bool query_once(const char *host, const char *path, printer_info_t *out)
+{
+    char url[80], uri[80];
+    snprintf(url, sizeof(url), "http://%s:631%s", host, path);
+    snprintf(uri, sizeof(uri), "ipp://%s%s", host, path);
 
     uint8_t req[256];
     size_t req_len = build_request(req, uri);
@@ -192,22 +197,11 @@ bool ipp_get_printer_info(const char *host, printer_info_t *out)
     esp_http_client_set_header(cli, "Content-Type", "application/ipp");
 
     bool ok = false;
-    esp_err_t err = esp_http_client_open(cli, req_len);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "open failed: %s", esp_err_to_name(err));
-        goto done;
-    }
-    if (esp_http_client_write(cli, (const char *)req, req_len) != (int)req_len) {
-        ESP_LOGW(TAG, "write failed");
-        goto done;
-    }
-    int clen = esp_http_client_fetch_headers(cli);
-    int status = esp_http_client_get_status_code(cli);
-    if (status != 200) {
-        ESP_LOGW(TAG, "HTTP status %d", status);
-        goto done;
-    }
-    (void)clen;
+    if (esp_http_client_open(cli, req_len) != ESP_OK) goto done;
+    if (esp_http_client_write(cli, (const char *)req, req_len) != (int)req_len) goto done;
+    esp_http_client_fetch_headers(cli);
+    if (esp_http_client_get_status_code(cli) != 200) goto done;
+
     uint8_t resp[512];
     int total = 0, r;
     while ((r = esp_http_client_read(cli, (char *)resp + total, sizeof(resp) - total)) > 0) {
@@ -227,6 +221,27 @@ done:
     esp_http_client_close(cli);
     esp_http_client_cleanup(cli);
     return ok;
+}
+
+bool ipp_get_printer_info(const char *host, printer_info_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->state = 3;
+
+    /* Try the last known-good path first, then the rest. */
+    if (query_once(host, s_last_path, out)) return true;
+    for (size_t i = 0; i < sizeof(k_paths) / sizeof(k_paths[0]); i++) {
+        if (!strcmp(k_paths[i], s_last_path)) continue;   /* already tried */
+        memset(out, 0, sizeof(*out));
+        out->state = 3;
+        if (query_once(host, k_paths[i], out)) {
+            strncpy(s_last_path, k_paths[i], sizeof(s_last_path) - 1);
+            s_last_path[sizeof(s_last_path) - 1] = '\0';
+            ESP_LOGI(TAG, "IPP endpoint: %s", s_last_path);
+            return true;
+        }
+    }
+    return false;
 }
 
 const char *ipp_state_str(int state)

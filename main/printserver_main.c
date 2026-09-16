@@ -254,17 +254,19 @@ static void advertise_mdns(void)
         return;
     }
     mdns_hostname_set(BRIDGE_HOSTNAME);                     /* PrintBridge.local */
-    mdns_instance_name_set("HP Color LaserJet (PrintBridge)");
+    mdns_instance_name_set(BRIDGE_HOSTNAME);
 
     char adminurl[48];
     snprintf(adminurl, sizeof(adminurl), "http://%s/", g_status.bridge_ip);
 
+    /* Generic defaults; refined to the real model/endpoint after the first
+     * successful IPP query (see mdns_apply_model). */
     mdns_txt_item_t ipp_txt[] = {
         {"txtvers", "1"},
         {"qtotal",  "1"},
         {"rp",      "ipp/print"},
-        {"ty",      "HP Color LaserJet M255"},
-        {"product", "(HP Color LaserJet M255)"},
+        {"ty",      "Network Printer"},
+        {"product", "(Network Printer)"},
         {"note",    "ESP32 PrintBridge"},
         {"adminurl", adminurl},
         {"pdl",     "application/pdf,image/urf,image/jpeg,application/postscript,application/octet-stream"},
@@ -287,6 +289,24 @@ static void advertise_mdns(void)
 
     ESP_LOGI(TAG, "mDNS: advertising %s.local (IPP 631 / raw 9100 / LPD 515)",
              BRIDGE_HOSTNAME);
+}
+
+/* Once we know the real printer, refine the _ipp._tcp advertisement so
+ * discovery shows the actual model and points at the working endpoint. */
+static void mdns_apply_model(const char *model, const char *ipp_path)
+{
+    if (model && model[0]) {
+        char inst[80], product[80];
+        snprintf(inst, sizeof(inst), "%s (PrintBridge)", model);
+        snprintf(product, sizeof(product), "(%s)", model);
+        mdns_service_instance_name_set("_ipp", "_tcp", inst);
+        mdns_service_txt_item_set("_ipp", "_tcp", "ty", model);
+        mdns_service_txt_item_set("_ipp", "_tcp", "product", product);
+    }
+    if (ipp_path && ipp_path[0] == '/') {   /* rp has no leading slash */
+        mdns_service_txt_item_set("_ipp", "_tcp", "rp", ipp_path + 1);
+    }
+    ESP_LOGI(TAG, "mDNS: labeled as '%s' rp=%s", model ? model : "?", ipp_path);
 }
 
 void app_main(void)
@@ -379,6 +399,7 @@ void app_main(void)
      * info over IPP every STATUS_PERIOD_MS. Logs a heartbeat and feeds the
      * display via g_status. */
     int since_ipp = STATUS_PERIOD_MS;   /* query immediately on first pass */
+    bool mdns_labeled = false;
     while (true) {
         wifi_ap_record_t ap;
         int rssi = 0;
@@ -404,6 +425,10 @@ void app_main(void)
             printer_info_t pi;
             if (ipp_get_printer_info(PRINTER_LAN_IP, &pi)) {
                 status_lock(); g_status.printer = pi; status_unlock();
+                if (!mdns_labeled) {
+                    mdns_apply_model(pi.make_and_model, ipp_endpoint_path());
+                    mdns_labeled = true;
+                }
                 ESP_LOGI(TAG, "[status] '%s' state=%s reasons=%s jobs=%d | rssi=%ddBm up=%us clients=%d",
                          pi.make_and_model, ipp_state_str(pi.state),
                          pi.state_reasons[0] ? pi.state_reasons : "none",
